@@ -1,8 +1,10 @@
-from rest_framework import viewsets, status
+from django.db import transaction
+from rest_framework import viewsets, status, serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import Order
 from .serializers import OrderSerializer, OrderUpdateSerializer
+
 
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.all()
@@ -44,3 +46,29 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         return super().partial_update(request, *args, **kwargs)
+
+    def perform_update(self, serializer):
+        # 1. Obtenemos el estado actual en BD antes de guardar la actualización
+        orden_previa = self.get_object()
+        estado_anterior = orden_previa.status
+
+        # 2. Aplicamos la actualización
+        orden_actualizada = serializer.save()
+        nuevo_estado = orden_actualizada.status
+
+        # 3. Solo descontamos si la orden pasa a 'confirmed' y no lo estaba antes
+        if estado_anterior != 'confirmed' and nuevo_estado == 'confirmed':
+            with transaction.atomic():
+                # Validación previa de inventario
+                for item in orden_actualizada.items.all():
+                    if item.product.stock < item.quantity:
+                        raise serializers.ValidationError(
+                            f"Stock insuficiente para '{item.product.name}'. "
+                            f"Disponible: {item.product.stock}, Solicitado: {item.quantity}"
+                        )
+
+                # Descuento atómico de existencias
+                for item in orden_actualizada.items.all():
+                    producto = item.product
+                    producto.stock -= item.quantity
+                    producto.save()

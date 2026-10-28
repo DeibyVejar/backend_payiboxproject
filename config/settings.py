@@ -31,7 +31,11 @@ SECRET_KEY = 'django-insecure-w27_z_@f97j^rs6a4#olfx$m99u1o8ykbwgo)9gy@nglmql0x8
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'payiboxgym.pythonanywhere.com',
+    'localhost',
+    '127.0.0.1',
+]
 AUTH_USER_MODEL = 'users.CustomUser'
 
 # Application definition
@@ -148,4 +152,5 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'

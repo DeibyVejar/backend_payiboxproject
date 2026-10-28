@@ -1,3 +1,4 @@
+import re
 from rest_framework import serializers
 from .models import CustomUser
 from django.contrib.auth.password_validation import validate_password
@@ -10,8 +11,8 @@ class UserSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'email',
-            'first_name',       # ✨ Añadido para poder leerlo en el perfil de Angular
-            'last_name',        # ✨ Añadido para poder leerlo en el perfil de Angular
+            'first_name',
+            'last_name',
             'is_client',
             'is_admin',
             'membership_active',
@@ -28,11 +29,23 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        # 1. Añadimos 'first_name' y 'last_name' para permitir su entrada desde Angular
         fields = ('first_name', 'last_name', 'email', 'password')
 
+    def validate_first_name(self, value):
+        nombre = value.strip()
+        # Permite letras (con acentos y ñ) y espacios
+        if not nombre or not re.match(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$', nombre):
+            raise serializers.ValidationError("El nombre solo debe contener letras.")
+        return nombre
+
+    def validate_last_name(self, value):
+        apellido = value.strip()
+        # Permite letras (con acentos y ñ) y espacios
+        if not apellido or not re.match(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$', apellido):
+            raise serializers.ValidationError("El apellido solo debe contener letras.")
+        return apellido
+
     def create(self, validated_data):
-        # 2. Pasamos los nuevos campos extraídos al método create_user
         user = CustomUser.objects.create_user(
             email=validated_data['email'],
             password=validated_data['password'],

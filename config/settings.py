@@ -36,6 +36,15 @@ ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
 ]
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'dicksonvejardev@gmail.com'
+EMAIL_HOST_PASSWORD = 'npzseaqygvidueda'  # Tus 16 caracteres sin espacios
+DEFAULT_FROM_EMAIL = 'Payibox <dicksonvejardev@gmail.com>'
+
 AUTH_USER_MODEL = 'users.CustomUser'
 
 # Application definition

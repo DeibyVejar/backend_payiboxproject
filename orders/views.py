@@ -1,4 +1,6 @@
 from django.db import transaction
+from django.core.mail import send_mail
+from django.utils.html import strip_tags
 from rest_framework import viewsets, status, serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -48,18 +50,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         return super().partial_update(request, *args, **kwargs)
 
     def perform_update(self, serializer):
-        # 1. Obtenemos el estado actual en BD antes de guardar la actualización
         orden_previa = self.get_object()
         estado_anterior = orden_previa.status
 
-        # 2. Aplicamos la actualización
         orden_actualizada = serializer.save()
         nuevo_estado = orden_actualizada.status
 
-        # 3. Solo descontamos si la orden pasa a 'confirmed' y no lo estaba antes
+        # Lógica de inventario: Descuento solo cuando pasa a 'confirmed'
         if estado_anterior != 'confirmed' and nuevo_estado == 'confirmed':
             with transaction.atomic():
-                # Validación previa de inventario
                 for item in orden_actualizada.items.all():
                     if item.product.stock < item.quantity:
                         raise serializers.ValidationError(
@@ -67,8 +66,87 @@ class OrderViewSet(viewsets.ModelViewSet):
                             f"Disponible: {item.product.stock}, Solicitado: {item.quantity}"
                         )
 
-                # Descuento atómico de existencias
                 for item in orden_actualizada.items.all():
                     producto = item.product
                     producto.stock -= item.quantity
                     producto.save()
+
+        # Notificación por correo con logo HTML
+        if estado_anterior != nuevo_estado:
+            self.enviar_correo_notificacion(orden_actualizada, nuevo_estado)
+
+    def enviar_correo_notificacion(self, orden, nuevo_estado):
+        cliente_email = orden.user.email
+        nombre_cliente = orden.user.first_name or "Cliente"
+        logo_url = "https://payibox-angular-omhn8tfw4-payibox.vercel.app/images/payiboxlogo2.png" # URL de tu logo en Vercel
+
+        if nuevo_estado == 'confirmed':
+            asunto = f"¡Compra Confirmada! - Orden #{orden.id} | Payibox"
+            badge_color = "#28a745"
+            badge_text = "CONFIRMADA"
+            mensaje_cuerpo = (
+                f"¡Buenas noticias! Tu pago para la <strong>Orden #{orden.id}</strong> ha sido verificado y confirmado con éxito.<br><br>"
+                f"<strong>Monto total:</strong> ${orden.total} COP<br><br>"
+                f"Ya estamos preparando tu pedido. Puedes consultar el detalle completo desde tu perfil en nuestra plataforma."
+            )
+        elif nuevo_estado == 'rejected':
+            asunto = f"Actualización sobre tu Orden #{orden.id} | Payibox"
+            badge_color = "#dc3545"
+            badge_text = "RECHAZADA"
+            mensaje_cuerpo = (
+                f"Lamentamos informarte que no hemos podido verificar el pago adjunto para la <strong>Orden #{orden.id}</strong>.<br><br>"
+                f"Si consideras que se trata de un error o deseas adjuntar un nuevo comprobante, por favor ponte en contacto con nuestro equipo de atención."
+            )
+        else:
+            return
+
+        # Estructura HTML estilizada del correo
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+        </head>
+        <body style="font-family: Arial, sans-serif; background-color: #f4f4f5; margin: 0; padding: 20px;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <!-- Encabezado con Logo -->
+                <div style="background-color: #18181b; padding: 20px; text-align: center;">
+                    <img src="{logo_url}" alt="Payibox Logo" style="max-height: 50px; margin-bottom: 8px;" onError="this.style.display='none'">
+                    <h1 style="color: #ffc107; margin: 0; font-size: 22px; font-weight: bold; letter-spacing: 1px;">PAYIBOX GYM</h1>
+                </div>
+
+                <!-- Cuerpo del mensaje -->
+                <div style="padding: 30px; color: #27272a;">
+                    <h2 style="margin-top: 0; color: #18181b;">Hola, {nombre_cliente}</h2>
+                    <p style="font-size: 15px; line-height: 1.6;">{mensaje_cuerpo}</p>
+
+                    <div style="margin: 25px 0; padding: 15px; background-color: #f8f9fa; border-left: 4px solid {badge_color}; border-radius: 4px;">
+                        <span style="font-size: 13px; text-transform: uppercase; color: #71717a; font-weight: bold;">Estado del Pedido</span>
+                        <h3 style="margin: 5px 0 0 0; color: {badge_color}; font-size: 18px;">{badge_text}</h3>
+                    </div>
+
+                    <p style="font-size: 14px; color: #71717a; margin-top: 30px;">¡Gracias por entrenar y confiar en Payibox!</p>
+                </div>
+
+                <!-- Pie de página -->
+                <div style="background-color: #f4f4f5; padding: 15px; text-align: center; font-size: 12px; color: #a1a1aa;">
+                    © Payibox Gym. Todos los derechos reservados.
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = strip_tags(html_content)
+
+        try:
+            send_mail(
+                subject=asunto,
+                message=text_content,
+                from_email='noreply@payibox.com',
+                recipient_list=[cliente_email],
+                html_message=html_content,
+                fail_silently=True
+            )
+        except Exception as e:
+            print(f"Error enviando correo de la orden #{orden.id}: {e}")
